@@ -15,7 +15,6 @@ class AuthTable:
     groupid: str = None         # 群号
     lastauth: int = None        # 最后一次授权的时间，时间戳
     deadline: int = None        # 到期时间
-    length: int = None          # 授权时长，单位为天
     type: int = None            # 授权类型，含义见AuthType
     note: str = None            # 备注
 
