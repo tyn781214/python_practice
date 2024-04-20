@@ -69,6 +69,6 @@ async def _(bot: Bot, ev: Event, matcher: Matcher):
 
     await bot.send(ev, 'permission denied: group not authorizated')
     matcher.stop_propagation()
-    raise IgnoredException
+    raise IgnoredException('permission denied: group not authorizated')
 
     return
