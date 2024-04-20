@@ -7,7 +7,7 @@ svstat = on_fullmatch("srvstat")
 @svstat.handle()
 async def _(ev: Event):
     if ev.get_user_id() not in get_driver().config.superusers:
-        await svstat.finish("error: permission denied(you are not admin)")
+        await svstat.finish("permission denied: you are not admin")
     await svstat.finish(CpuInfo() + "\n" + MemInfo() + "\n" + DiskInfo())
 
 def MemInfo():

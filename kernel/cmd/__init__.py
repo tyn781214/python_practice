@@ -9,7 +9,7 @@ svping = on_fullmatch("!ping")
 @svcmd.handle()
 async def _(ev: Event, cmd: Message=CommandArg()):
     if ev.get_user_id() not in get_driver().config.superusers:
-        await svcmd.finish("error: permission denied(you are not admin)")
+        await svcmd.finish("permission denied: you are not admin")
     cmdline = cmd.extract_plain_text()
     if not cmdline:
         await svcmd.finish("error: command is None.")

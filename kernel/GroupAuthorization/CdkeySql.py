@@ -1,5 +1,4 @@
 import time
-
 from utils.sqliteutil.basesql import BaseSql
 from dataclasses import dataclass
 from enum import Enum
