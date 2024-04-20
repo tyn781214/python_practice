@@ -1,20 +1,20 @@
-import time
-
 from utils.sqliteutil.basesql import BaseSql
 from dataclasses import dataclass
 from enum import Enum
 import datetime
+import time
 
 class AuthType(Enum):
-    NONE = 0                    # 未授权（保留字）
+    NONE = 0                    # 未授权（保留）
     ADMIN = 1                   # 管理员指令授权
     CDKEY = 2                   # CDKEY授权
-    OTHER = 999                 # 其他（保留字）
+    OTHER = 999                 # 其他（保留）
 
 @dataclass
 class AuthTable:
     groupid: str = None         # 群号
-    lastauth: int = None        # 最后一次授权的时间，使用之间字符串进行保存
+    lastauth: int = None        # 最后一次授权的时间，时间戳
+    deadline: int = None        # 到期时间
     length: int = None          # 授权时长，单位为天
     type: int = None            # 授权类型，含义见AuthType
     note: str = None            # 备注
@@ -30,7 +30,7 @@ class AuthSql(BaseSql):
         CREATE TABLE IF NOT EXISTS group_auth (
             GROUPID     INT PRIMARY KEY NOT NULL,
             LASTAUTH    CHAR(25),
-            LENGTH      INT,
+            DEADLINE    CHAR(25),
             TYPE        CHAR(20),
             NOTE        CHAR(50)
         )
@@ -38,27 +38,14 @@ class AuthSql(BaseSql):
 
         super().ExecuteSingleSql(sql=sql)
 
-    def InsertTable(self, data: AuthTable):
-        if None == data.groupid:
-            raise TypeError("Group cannot be None")
-
-        if None != data.lastauth:
-            dt_object = datetime.datetime.fromtimestamp(data.lastauth)
-            lastauth_str = dt_object.strftime('%Y-%m-%d %H:%M:%S')
-        else:
-            lastauth_str = None
-
-        if None != data.type:
-            type_str = AuthType(data.type).name
-        else:
-            type_str = None
+    def InsertTable(self, group):
 
         sql = '''
-        INSERT INTO group_auth (GROUPID, LASTAUTH, LENGTH, TYPE, NOTE)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO group_auth (GROUPID)
+        VALUES (?)
         '''
 
-        super().ExecuteSingleSql(sql, (data.groupid, lastauth_str, data.length, type_str, data.note))
+        super().ExecuteSingleSql(sql, (group, ))
 
         return
 
@@ -74,16 +61,20 @@ class AuthSql(BaseSql):
         ret = ret[0]
         info = AuthTable(group)
 
-        if None != ret[1]:
+        if ret[1] is not None:
             dt_object = datetime.datetime.strptime(ret[1], '%Y-%m-%d %H:%M:%S')
             timestamp = dt_object.timestamp()
             info.lastauth = timestamp
 
-        info.length = ret[2]
-        info.note = ret[4]
+        if ret[2] is not None:  # 处理 DEADLINE 字段
+            dt_object = datetime.datetime.strptime(ret[2], '%Y-%m-%d %H:%M:%S')
+            timestamp = dt_object.timestamp()
+            info.deadline = timestamp
 
-        if None != ret[3]:
+        if ret[3] is not None:
             info.type = AuthType[ret[3]].value
+
+        info.note = ret[4]
 
         return info
 
@@ -96,13 +87,15 @@ class AuthSql(BaseSql):
             dt_object = datetime.datetime.fromtimestamp(data.lastauth)
             lastauth_str = dt_object.strftime('%Y-%m-%d %H:%M:%S')
             update.append(('LASTAUTH', lastauth_str, data.groupid))
-        if None != data.length:
-            update.append(('LENGTH', data.length, data.groupid))
         if None != data.type:
             type_str = AuthType(data.type).name
             update.append(('TYPE', type_str, data.groupid))
         if None != data.note:
             update.append(('NOTE', data.note, data.groupid))
+        if data.deadline is not None:
+            dt_object = datetime.datetime.fromtimestamp(data.deadline)
+            deadline_str = dt_object.strftime('%Y-%m-%d %H:%M:%S')
+            update.append(('DEADLINE', deadline_str, data.groupid))
 
         if 0 == len(update):
             return          # 未进行任何更改，直接返回
@@ -139,15 +132,13 @@ class AuthSql(BaseSql):
 
         data = self.SelectTableByGroup(group)
         now = time.time()
-        if None != data.lastauth:
-            last = data.lastauth
-            remain_auth = data.length - (datetime.datetime.utcfromtimestamp(now) - datetime.datetime.utcfromtimestamp(last)).days
-            remain_auth = remain_auth if remain_auth >= 0 else 0
-        else:
-            remain_auth = 0
 
         data.lastauth = now
-        data.length = length + remain_auth
+        if data.deadline is not None:
+            data.deadline = datetime.datetime.fromtimestamp(data.deadline) + datetime.timedelta(days=length)
+        else:
+            data.deadline = datetime.datetime.fromtimestamp(now) + datetime.timedelta(days=length)
+        data.deadline = data.deadline.timestamp()
         data.type = type
         data.note = note
 
@@ -155,8 +146,47 @@ class AuthSql(BaseSql):
 
         return
 
-if __name__ == '__main__':
-    s = AuthSql()
-    # d = AuthTable('123456', lastauth=time.time(), length=123, note="这是一条备注", type=AuthType.CDKEY)
-    s.DoSingleAuth('1234567890', 5, AuthType.CDKEY, 'additional auth')
+
+# if __name__ == '__main__':
+#     # 创建 AuthSql 对象
+#     auth_sql = AuthSql()
+#
+#     # 测试 InsertTable 方法
+#     auth_sql.InsertTable(1001)  # 使用整数型的groupid
+#     auth_sql.InsertTable(1002)
+#
+#     # 测试 SelectTableByGroup 方法
+#     info1 = auth_sql.SelectTableByGroup(1001)
+#     info2 = auth_sql.SelectTableByGroup(1002)
+#
+#     # 打印查询结果
+#     print(info1)
+#     print(info2)
+#
+#     # 测试 DoSingleAuth 方法
+#     auth_sql.DoSingleAuth(1001, 7, AuthType.ADMIN, "Test admin auth")
+#     auth_sql.DoSingleAuth(1002, 15, AuthType.CDKEY, "Test cdkey auth")
+#
+#     # 重新查询并打印结果
+#     info1_updated = auth_sql.SelectTableByGroup(1001)
+#     info2_updated = auth_sql.SelectTableByGroup(1002)
+#     print(info1_updated)
+#     print(info2_updated)
+#
+#     # 测试 UpdateTableByGroup 方法
+#     info1_updated.note = "Updated admin auth"
+#     auth_sql.UpdateTableByGroup(info1_updated)
+#
+#     # 重新查询并打印结果
+#     info1_updated = auth_sql.SelectTableByGroup(1001)
+#     print(info1_updated)
+#
+#     # 测试 DeleteTableByGroup 方法
+#     auth_sql.DeleteTableByGroup(1002)
+#
+#     # 重新查询并打印结果
+#     info2_deleted = auth_sql.SelectTableByGroup(1002)
+#     print(info2_deleted)
+
+
 
